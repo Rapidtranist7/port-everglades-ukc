@@ -8,17 +8,24 @@ import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger, SheetDescription } from "@/components/ui/sheet";
-import { Moon, Sun, SlidersHorizontal, RefreshCw, Waves, Wind, Clock, Ship, Calculator } from "lucide-react";
+import { Moon, Sun, SlidersHorizontal, RefreshCw, Waves, Wind, Clock, Ship, Calculator, ArrowUpRight, ArrowDownRight, MoveRight } from "lucide-react";
 import { SegmentCard, Field, STATUS_META } from "@/components/SegmentCard";
 import { ChartsTab } from "@/components/ChartsTab";
 import { ConditionsTab } from "@/components/ConditionsTab";
 import { MethodTab } from "@/components/MethodTab";
 import { VESSEL_PRESETS, SEGMENT_DEFAULTS, SETTINGS_DEFAULT, CB_RANGES, type VesselForm, type SegmentForm, type SettingsForm } from "@/lib/presets";
 import {
-  evaluate, liveSpectrum, manualSpectrum, interp, tideResidual, tideWindows, ageMin, compass, fmtTime, fmtDayTime, M2FT,
+  evaluate, liveSpectrum, manualSpectrum, interp, tideResidual, tideWindows, tideState, highestTide, ageMin, compass, fmtTime, fmtDayTime, M2FT,
   type BuoyData, type WindData, type TideData,
 } from "@/lib/compute";
+import { loadBuoy, loadWind, loadTides } from "@/lib/feeds-client";
 import { queryClient } from "@/lib/queryClient";
+
+function TrendIcon({ trend, className = "w-3.5 h-3.5" }: { trend?: "rising" | "falling" | "slack"; className?: string }) {
+  if (trend === "rising") return <ArrowUpRight className={`${className} text-[hsl(var(--go))]`} />;
+  if (trend === "falling") return <ArrowDownRight className={`${className} text-[hsl(var(--chart-1))]`} />;
+  return <MoveRight className={`${className} text-muted-foreground`} />;
+}
 
 function Logo() {
   return (
@@ -38,22 +45,31 @@ export default function Home() {
   const [st, setSt] = useState<SettingsForm>({ ...SETTINGS_DEFAULT });
   const [etaOffsetH, setEtaOffsetH] = useState(0);
   const [tideMode, setTideMode] = useState<"live" | "manual">("live");
+  const [planMode, setPlanMode] = useState<"eta" | "hw">("eta");
   const [tideStation, setTideStation] = useState("8722951");
   const [manualTide, setManualTide] = useState(1.0);
   const [waveSrc, setWaveSrc] = useState<"live" | "manual">("live");
   const [manualWave, setManualWave] = useState({ hsFt: 4, tp: 9, dir: 90 });
   const [cbCalc, setCbCalc] = useState({ dispT: 60000 });
 
-  const buoy = useQuery<BuoyData>({ queryKey: ["/api/buoy"], refetchInterval: 5 * 60e3 });
-  const wind = useQuery<WindData>({ queryKey: ["/api/wind"], refetchInterval: 5 * 60e3 });
-  const tides = useQuery<TideData>({ queryKey: [`/api/tides?station=${tideStation}`], refetchInterval: 10 * 60e3 });
+  const buoy = useQuery<BuoyData>({ queryKey: ["buoy"], queryFn: loadBuoy, refetchInterval: 5 * 60e3, retry: 1 });
+  const wind = useQuery<WindData>({ queryKey: ["wind"], queryFn: loadWind, refetchInterval: 5 * 60e3, retry: 1 });
+  const tides = useQuery<TideData>({ queryKey: ["tides", tideStation], queryFn: () => loadTides(tideStation), refetchInterval: 10 * 60e3, retry: 1 });
 
   const toggleDark = () => { setDark(!dark); document.documentElement.classList.toggle("dark", !dark); };
 
-  const etaMs = useMemo(() => Date.now() + etaOffsetH * 3600e3, [etaOffsetH, tides.dataUpdatedAt]);
   const { residual } = tideResidual(tides.data);
-  const predAtEta = tides.data ? interp(tides.data.predictions, etaMs) : null;
-  const tideFt = tideMode === "manual" ? manualTide : (predAtEta ?? 0) + (st.applyResidual ? residual ?? 0 : 0);
+  const offsetFt = st.applyResidual ? residual ?? 0 : 0;
+  // Highest high water in the next 24 h (higher high water) — the planning basis when the HW toggle is on.
+  const hw = useMemo(() => highestTide(tides.data, Date.now(), 24), [tides.data, tides.dataUpdatedAt]);
+  const useHw = tideMode === "live" && planMode === "hw" && hw != null;
+  const etaMs = useMemo(() => (useHw ? Date.parse(hw!.t) : Date.now() + etaOffsetH * 3600e3), [etaOffsetH, tides.dataUpdatedAt, useHw, hw]);
+  const predAtEta = useHw ? hw!.v : tides.data ? interp(tides.data.predictions, etaMs) : null;
+  const tideFt = tideMode === "manual" ? manualTide : (predAtEta ?? 0) + offsetFt;
+  // State of tide right now and at the planning time (predicted; the weather offset shifts the height, not the trend).
+  const stateNow = useMemo(() => tideState(tides.data, Date.now()), [tides.data, tides.dataUpdatedAt]);
+  const stateEta = useMemo(() => tideState(tides.data, etaMs), [tides.data, etaMs]);
+  const fmtDur = (min: number | null) => (min == null ? "—" : min < 60 ? `${Math.round(min)} min` : `${Math.floor(min / 60)} h ${String(Math.round(min % 60)).padStart(2, "0")} min`);
   const liveSpec = useMemo(() => liveSpectrum(buoy.data), [buoy.data]);
   const spec = useMemo(() => (waveSrc === "live" ? liveSpec : manualSpectrum(manualWave.hsFt, manualWave.tp, manualWave.dir)), [waveSrc, liveSpec, manualWave]);
   const rows = useMemo(() => evaluate(vessel, segs, st, spec, tideFt), [vessel, segs, st, spec, tideFt]);
@@ -65,7 +81,7 @@ export default function Home() {
   const limitingSpeed = rows.map((r) => ({ name: r.sf.short, kn: r.maxSpeedKn, planned: r.sf.speedKn }));
 
   const buoyAge = ageMin(buoy.data?.std?.time);
-  const stale = buoyAge > 120;
+  const stale = !!buoy.data?.std && buoyAge > 120;
   const hsFt = waveSrc === "live" ? (buoy.data?.std?.hs ?? null) : manualWave.hsFt / M2FT;
 
   const setSeg = (i: number) => (s: SegmentForm) => setSegs(segs.map((x, j) => (j === i ? s : x)));
@@ -240,27 +256,50 @@ export default function Home() {
         {/* Live conditions strip */}
         <section className="grid grid-cols-2 lg:grid-cols-4 gap-3" data-testid="strip-conditions">
           <Card className="p-3.5">
-            <div className="flex items-center justify-between text-xs text-muted-foreground"><span className="flex items-center gap-1.5"><Waves className="w-3.5 h-3.5" />Waves · 41122</span>{waveSrc === "live" && <span className={stale ? "text-[hsl(var(--caution))]" : ""}>{buoy.data?.std ? `${Math.round(buoyAge)} min ago` : buoy.isLoading ? "loading" : "no data"}</span>}</div>
+            <div className="flex items-center justify-between text-xs text-muted-foreground"><span className="flex items-center gap-1.5"><Waves className="w-3.5 h-3.5" />Waves · 41122</span>{waveSrc === "live" && <span className={stale ? "text-[hsl(var(--caution))]" : ""}>{buoy.data?.std ? `${Math.round(buoyAge)} min ago${buoy.data.source === "cdip" ? " · CDIP" : ""}` : buoy.isLoading ? "loading" : buoy.isError ? "feed error" : "no data"}</span>}</div>
             <div className="font-mono text-xl font-semibold mt-1" data-testid="text-hs">{hsFt == null ? "—" : (hsFt * M2FT).toFixed(1)} <span className="text-sm text-muted-foreground font-normal">ft Hs</span></div>
             <div className="text-xs text-muted-foreground mt-0.5">{waveSrc === "live" ? `Tp ${buoy.data?.std?.dpd ?? "—"} s · from ${compass(buoy.data?.std?.mwd)} · swell ${buoy.data?.parts?.swellH != null ? (buoy.data.parts.swellH * M2FT).toFixed(1) : "—"} ft @ ${buoy.data?.parts?.swellT ?? "—"} s` : `Manual · Tp ${manualWave.tp} s from ${manualWave.dir}°`}</div>
           </Card>
           <Card className="p-3.5">
-            <div className="flex items-center justify-between text-xs text-muted-foreground"><span className="flex items-center gap-1.5"><Wind className="w-3.5 h-3.5" />Wind · PEGF1</span><span>{wind.data?.time ? `${Math.round(ageMin(wind.data.time))} min ago` : ""}</span></div>
+            <div className="flex items-center justify-between text-xs text-muted-foreground"><span className="flex items-center gap-1.5"><Wind className="w-3.5 h-3.5" />Wind · PEGF1</span><span>{wind.data?.time ? `${Math.round(ageMin(wind.data.time))} min ago` : wind.isLoading ? "loading" : wind.isError ? "feed error" : "no data"}</span></div>
             <div className="font-mono text-xl font-semibold mt-1" data-testid="text-wind">{wind.data?.wspd != null ? (wind.data.wspd * 1.94384).toFixed(0) : "—"} <span className="text-sm text-muted-foreground font-normal">kn</span></div>
             <div className="text-xs text-muted-foreground mt-0.5">from {compass(wind.data?.wdir)} ({wind.data?.wdir ?? "—"}°) · gust {wind.data?.gst != null ? (wind.data.gst * 1.94384).toFixed(0) : "—"} kn</div>
           </Card>
-          <Card className="p-3.5">
-            <div className="flex items-center justify-between text-xs text-muted-foreground"><span className="flex items-center gap-1.5 truncate"><Clock className="w-3.5 h-3.5 shrink-0" />Tide at ETA · {tides.data?.stations?.find((x) => x.id === tideStation)?.short ?? tideStation}</span><span>{tideMode === "live" ? fmtTime(etaMs) : "manual"}</span></div>
+          <Card className="p-3.5 col-span-2 lg:col-span-1" data-testid="card-tide-strip">
+            <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+              <span className="flex items-center gap-1.5 min-w-0"><Clock className="w-3.5 h-3.5 shrink-0" /><span className="truncate">Tide · {tides.data?.stations?.find((x) => x.id === tideStation)?.short ?? tideStation}</span></span>
+              <span className="shrink-0 font-mono">{tideMode === "live" ? (useHw ? `HW ${fmtDayTime(etaMs)}` : `ETA ${fmtTime(etaMs)}`) : "manual"}</span>
+            </div>
             <div className="font-mono text-xl font-semibold mt-1" data-testid="text-tide">{tideFt >= 0 ? "+" : ""}{tideFt.toFixed(1)} <span className="text-sm text-muted-foreground font-normal">ft MLLW</span></div>
-            <div className="text-xs text-muted-foreground mt-0.5">{tideMode === "live" ? `predicted ${predAtEta?.toFixed(2) ?? "—"} · offset ${residual != null ? (residual >= 0 ? "+" : "") + residual.toFixed(2) : "—"} ft` : "entered by pilot"}</div>
+            <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1.5 min-w-0">
+              {tideMode === "live" ? (
+                tides.data ? (
+                  <>
+                    <TrendIcon trend={useHw ? "slack" : stateEta?.trend} />
+                    <span className="truncate">
+                      {useHw ? `high water · ${fmtDur(hw ? (Date.parse(hw.t) - Date.now()) / 60e3 : null)} from now` : stateEta ? `${stateEta.trend}${stateEta.trend !== "slack" ? ` ${Math.abs(stateEta.rateFtPerHr).toFixed(1)} ft/h` : ""}${stateEta.next ? ` · ${stateEta.next.type === "H" ? "high" : "low"} ${fmtTime(stateEta.next.t)} (${stateEta.next.v.toFixed(1)} ft)` : ""}` : "—"}
+                      {` · offset ${residual != null ? (residual >= 0 ? "+" : "") + residual.toFixed(2) : "—"} ft`}
+                    </span>
+                  </>
+                ) : <span>{tides.isLoading ? "loading tide predictions" : "tide data unavailable"}</span>
+              ) : <span>entered by pilot</span>}
+            </div>
+            {tideMode === "live" && (
+              <div className="mt-2 grid grid-cols-2 rounded-md ring-1 ring-border overflow-hidden text-[11px] font-medium" role="group" aria-label="Tide planning basis">
+                <button onClick={() => setPlanMode("eta")} className={`px-2 py-1 ${planMode === "eta" ? "bg-foreground text-background" : "hover:bg-muted text-muted-foreground"}`} data-testid="button-plan-eta">At ETA</button>
+                <button onClick={() => setPlanMode("hw")} disabled={!hw} className={`px-2 py-1 disabled:opacity-40 ${planMode === "hw" ? "bg-foreground text-background" : "hover:bg-muted text-muted-foreground"}`} data-testid="button-plan-hw">At high water</button>
+              </div>
+            )}
           </Card>
-          <Card className="p-3.5">
+          <Card className="p-3.5 col-span-2 lg:col-span-1">
             <div className="flex items-center justify-between text-xs text-muted-foreground"><span className="flex items-center gap-1.5"><Ship className="w-3.5 h-3.5" />Vessel</span><span>{st.direction}</span></div>
             <div className="font-mono text-xl font-semibold mt-1">{vessel.draftFt.toFixed(1)} <span className="text-sm text-muted-foreground font-normal">ft draft</span></div>
             <div className="text-xs text-muted-foreground mt-0.5 truncate">{vessel.lbpFt.toFixed(0)} × {vessel.beamFt.toFixed(1)} ft · Cb {vessel.cb.toFixed(2)}</div>
           </Card>
         </section>
         {waveSrc === "live" && stale && <p className="text-xs text-[hsl(var(--caution))]" data-testid="text-stale">Buoy report is more than 2 hours old — check the buoy or enter waves manually.</p>}
+        {waveSrc === "live" && buoy.isError && <p className="text-xs text-[hsl(var(--caution))]" data-testid="text-buoy-error">Wave buoy feed could not be reached (NDBC/CDIP). Refresh, or enter waves manually — the wave allowance is zero until then.</p>}
+        {tideMode === "live" && tides.isError && <p className="text-xs text-[hsl(var(--caution))]" data-testid="text-tide-error">NOAA tide predictions could not be reached. Refresh, or switch the tide to manual — tide is treated as 0.0 ft until then.</p>}
 
         <Tabs defaultValue="transit">
           <TabsList className="w-full sm:w-auto grid grid-cols-4 sm:inline-flex" data-testid="tabs-main">
@@ -293,11 +332,46 @@ export default function Home() {
                         {tides.data?.curve === "interpolated-from-hilo" ? "NOAA publishes highs/lows only for this station; the curve between them is interpolated. " : tides.data?.curve === "noaa-6min" ? "NOAA 6-minute predictions. " : ""}
                         Weather offset comes from the live gauge at South Port Everglades (8722956).
                       </p>
-                      <div className="flex justify-between text-xs"><span className="text-muted-foreground">ETA at sea buoy</span><span className="font-mono" data-testid="text-eta">{etaOffsetH === 0 ? "Now" : `+${etaOffsetH.toFixed(2).replace(/\.?0+$/, "")} h`} · {fmtDayTime(etaMs)}</span></div>
-                      <Slider value={[etaOffsetH]} min={0} max={30} step={0.25} onValueChange={(x) => setEtaOffsetH(x[0])} data-testid="slider-eta" />
+                      {/* State of tide now */}
+                      <div className="rounded-md bg-muted/40 ring-1 ring-border/60 px-3 py-2 space-y-1" data-testid="tide-state">
+                        <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                          <span>State of tide now · {fmtTime(Date.now())}</span>
+                          <span className="shrink-0">{stateNow?.next ? `${stateNow.next.type === "H" ? "High" : "Low"} water in ${fmtDur(stateNow.minToNext)}` : ""}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <TrendIcon trend={stateNow?.trend} className="w-5 h-5 shrink-0" />
+                          <span className="text-base font-semibold">
+                            {stateNow ? <><span className="capitalize">{stateNow.trend}</span> <span className="font-mono">· {(stateNow.heightFt + offsetFt) >= 0 ? "+" : ""}{(stateNow.heightFt + offsetFt).toFixed(1)} ft</span></> : tides.isLoading ? "loading…" : "unavailable"}
+                          </span>
+                        </div>
+                        {stateNow && (
+                          <div className="text-xs text-muted-foreground font-mono">
+                            {stateNow.trend !== "slack" ? `${Math.abs(stateNow.rateFtPerHr).toFixed(1)} ft/h` : "near slack"}
+                            {stateNow.prev ? ` · ${stateNow.prev.type === "H" ? "high" : "low"} ${fmtTime(stateNow.prev.t)} (${stateNow.prev.v.toFixed(1)})` : ""}
+                            {stateNow.next ? ` → ${stateNow.next.type === "H" ? "high" : "low"} ${fmtTime(stateNow.next.t)} (${stateNow.next.v.toFixed(1)})` : ""}
+                          </div>
+                        )}
+                        {stateNow?.progress != null && (
+                          <div className="h-1 rounded bg-border/70 overflow-hidden mt-1"><div className={`h-full ${stateNow.trend === "falling" ? "bg-[hsl(var(--chart-1))]" : "bg-[hsl(var(--go))]"}`} style={{ width: `${Math.round(Math.max(0, Math.min(1, stateNow.progress)) * 100)}%` }} /></div>
+                        )}
+                      </div>
+
+                      {/* Highest tide toggle */}
+                      <div className="flex items-center justify-between gap-3 rounded-md ring-1 ring-border/60 px-3 py-2" data-testid="row-highest-tide">
+                        <div className="min-w-0">
+                          <Label className="text-sm">Calculate at highest tide</Label>
+                          <p className="text-[11px] text-muted-foreground">
+                            {hw ? <>Higher high water, next 24 h: <span className="font-mono text-foreground">{fmtDayTime(hw.t)}</span> · <span className="font-mono text-foreground">{hw.v.toFixed(2)} ft</span> predicted{residual != null && st.applyResidual ? <> (<span className="font-mono">{(hw.v + offsetFt).toFixed(2)}</span> ft with offset)</> : null}</> : tides.isLoading ? "Loading high/low predictions…" : "No high water in the next 24 h of predictions."}
+                          </p>
+                        </div>
+                        <Switch checked={planMode === "hw"} disabled={!hw} onCheckedChange={(x) => setPlanMode(x ? "hw" : "eta")} data-testid="switch-highest-tide" />
+                      </div>
+
+                      <div className="flex justify-between text-xs"><span className="text-muted-foreground">{useHw ? "Planning time (high water)" : "ETA at sea buoy"}</span><span className="font-mono" data-testid="text-eta">{useHw ? "HW" : etaOffsetH === 0 ? "Now" : `+${etaOffsetH.toFixed(2).replace(/\.?0+$/, "")} h`} · {fmtDayTime(etaMs)}</span></div>
+                      <Slider value={[useHw ? Math.max(0, Math.min(30, (etaMs - Date.now()) / 3600e3)) : etaOffsetH]} min={0} max={30} step={0.25} disabled={useHw} onValueChange={(x) => setEtaOffsetH(x[0])} data-testid="slider-eta" />
                       <div className="flex flex-wrap gap-1.5 pt-1">
                         {(tides.data?.hilo ?? []).filter((h) => Date.parse(h.t) > Date.now() && Date.parse(h.t) < Date.now() + 30 * 3600e3).slice(0, 4).map((h) => (
-                          <button key={h.t} onClick={() => setEtaOffsetH(Math.round(((Date.parse(h.t) - Date.now()) / 3600e3) * 4) / 4)} className="text-[11px] font-mono px-2 py-1 rounded ring-1 ring-border hover:bg-muted" data-testid={`button-hilo-${h.t}`}>
+                          <button key={h.t} onClick={() => { setPlanMode("eta"); setEtaOffsetH(Math.round(((Date.parse(h.t) - Date.now()) / 3600e3) * 4) / 4); }} className="text-[11px] font-mono px-2 py-1 rounded ring-1 ring-border hover:bg-muted" data-testid={`button-hilo-${h.t}`}>
                             {h.type === "H" ? "High" : "Low"} {fmtTime(h.t)} · {h.v.toFixed(1)}
                           </button>
                         ))}

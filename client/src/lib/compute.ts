@@ -5,17 +5,17 @@ import {
 import type { VesselForm, SegmentForm, SettingsForm } from "./presets";
 
 export interface BuoyData {
-  station: string; name: string; lat: number; lon: number; depthM: number; errors: string[];
+  station: string; name: string; lat: number; lon: number; depthM: number; errors: string[]; source?: string;
   std?: { time: string; hs: number | null; dpd: number | null; apd: number | null; mwd: number | null; wtmp: number | null };
   history?: { time: string; hs: number | null; dpd: number | null; mwd: number | null }[];
   parts?: { time: string; hs: number | null; swellH: number | null; swellT: number | null; windH: number | null; windT: number | null; swellDir: number | null; windDir: number | null; swellDirTxt?: string; windDirTxt?: string; steepness?: string; apd?: number | null; mwd?: number | null };
   spectrum?: { time: string; bins: { f: number; df: number; S: number; dir: number | null; r1: number | null }[] };
   current?: { time: string; depthM: number | null; dir: number | null; speedCms: number | null };
 }
-export interface WindData { station: string; name: string; time: string; wdir: number | null; wspd: number | null; gst: number | null; pres: number | null }
+export interface WindData { station: string; name: string; time: string; wdir: number | null; wspd: number | null; gst: number | null; pres: number | null; source?: string }
 export interface TideStationInfo { id: string; name: string; short: string; kind: "reference" | "subordinate"; observed: boolean }
 export interface TideData {
-  station: string; name: string; kind: "reference" | "subordinate"; datum: string; units: string; errors: string[];
+  station: string; name: string; kind: "reference" | "subordinate"; datum: string; units: string; errors: string[]; source?: string;
   curve?: "noaa-6min" | "interpolated-from-hilo";
   predictions: { t: string; v: number }[]; hilo: { t: string; v: number; type: string }[];
   observed: { t: string; v: number }[]; observedPredictions?: { t: string; v: number }[];
@@ -90,6 +90,40 @@ export function tideResidual(td?: TideData): { residual: number | null; lastObs?
   }).filter((x): x is number => x != null);
   if (!diffs.length) return { residual: null };
   return { residual: diffs.reduce((a, b) => a + b, 0) / diffs.length, lastObs: td.observed[td.observed.length - 1] };
+}
+
+/** State of tide at a moment: height, trend, rate and the bracketing high/low. Heights in ft MLLW (predicted; add residual separately). */
+export interface TideState {
+  heightFt: number;
+  trend: "rising" | "falling" | "slack";
+  rateFtPerHr: number;
+  prev?: { t: string; v: number; type: string };
+  next?: { t: string; v: number; type: string };
+  /** 0 at previous turn, 1 at next turn */
+  progress: number | null;
+  minToNext: number | null;
+}
+export function tideState(td: TideData | undefined, atMs: number): TideState | null {
+  if (!td?.predictions?.length) return null;
+  const h = interp(td.predictions, atMs);
+  if (h == null) return null;
+  const dt = 30 * 60e3;
+  const a = interp(td.predictions, atMs - dt), b = interp(td.predictions, atMs + dt);
+  const rate = a != null && b != null ? (b - a) / 1 : 0; // ft per hour (difference over 1 h)
+  const hilo = td.hilo ?? [];
+  const next = hilo.find((x) => Date.parse(x.t) > atMs);
+  const prev = [...hilo].reverse().find((x) => Date.parse(x.t) <= atMs);
+  let trend: TideState["trend"] = Math.abs(rate) < 0.05 ? "slack" : rate > 0 ? "rising" : "falling";
+  if (next && Math.abs(rate) < 0.05) trend = next.type === "H" ? "rising" : "falling";
+  const progress = prev && next ? (atMs - Date.parse(prev.t)) / (Date.parse(next.t) - Date.parse(prev.t)) : null;
+  return { heightFt: h, trend, rateFtPerHr: rate, prev, next, progress, minToNext: next ? (Date.parse(next.t) - atMs) / 60e3 : null };
+}
+
+/** Highest predicted high water within the window (Port Everglades tides are semidiurnal with a daily inequality, so this is the higher high water). */
+export function highestTide(td: TideData | undefined, fromMs: number, hours = 24): { t: string; v: number } | null {
+  const hs = (td?.hilo ?? []).filter((x) => x.type === "H" && Date.parse(x.t) >= fromMs && Date.parse(x.t) <= fromMs + hours * 3600e3);
+  if (!hs.length) return null;
+  return hs.reduce((a, b) => (b.v > a.v ? b : a));
 }
 
 export type Status = "go" | "caution" | "nogo";
