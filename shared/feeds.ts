@@ -110,42 +110,89 @@ function ymd(d: Date) {
   return `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, "0")}${String(d.getUTCDate()).padStart(2, "0")}`;
 }
 
-export async function tides() {
-  const now = new Date();
-  const begin = new Date(now.getTime() - 12 * 3600e3);
-  const end = new Date(now.getTime() + 36 * 3600e3);
-  const base = `station=8722956&datum=MLLW&units=english&time_zone=gmt&format=json&application=PortEvergladesUKC`;
-  const [pred, hilo, obs] = await Promise.allSettled([
-    getText(`${COOPS}?${base}&product=predictions&interval=6&begin_date=${ymd(begin)}&end_date=${ymd(end)}`),
-    getText(`${COOPS}?${base}&product=predictions&interval=hilo&begin_date=${ymd(begin)}&end_date=${ymd(end)}`),
-    getText(`${COOPS}?${base}&product=water_level&range=6`),
-  ]);
-  const toIso = (t: string) => t.replace(" ", "T") + ":00Z";
-  const out: any = { station: "8722956", name: "South Port Everglades (NOAA CO-OPS)", datum: "MLLW", units: "ft", errors: [] as string[] };
-  if (pred.status === "fulfilled") {
-    const j = JSON.parse(pred.value);
-    out.predictions = (j.predictions ?? []).map((x: any) => ({ t: toIso(x.t), v: Number(x.v) }));
-  } else out.errors.push("predictions");
-  if (hilo.status === "fulfilled") {
-    const j = JSON.parse(hilo.value);
-    out.hilo = (j.predictions ?? []).map((x: any) => ({ t: toIso(x.t), v: Number(x.v), type: x.type }));
+export interface TideStation { id: string; name: string; short: string; kind: "reference" | "subordinate"; observed: boolean; lat: number; lon: number }
+
+/** NOAA CO-OPS tide stations around the Port Everglades entrance. Only 8722956 has a live gauge. */
+export const TIDE_STATIONS: TideStation[] = [
+  { id: "8722951", name: "Port Everglades, Turning Basin", short: "Turning Basin", kind: "subordinate", observed: false, lat: 26.0917, lon: -80.1233 },
+  { id: "8722956", name: "South Port Everglades, ICWW (live gauge)", short: "S. Port Everglades", kind: "reference", observed: true, lat: 26.0817, lon: -80.1167 },
+  { id: "8722899", name: "Lauderdale-by-the-Sea, Anglin Fishing Pier", short: "Anglin Pier", kind: "reference", observed: false, lat: 26.1883, lon: -80.0933 },
+  { id: "8722939", name: "Bahia Mar Yacht Club", short: "Bahia Mar", kind: "subordinate", observed: false, lat: 26.1133, lon: -80.1083 },
+  { id: "8722937", name: "Fort Lauderdale, Andrews Ave. Bridge", short: "Andrews Ave", kind: "reference", observed: false, lat: 26.1183, lon: -80.145 },
+  { id: "8722957", name: "Whiskey Creek, north end", short: "Whiskey Creek N", kind: "subordinate", observed: false, lat: 26.08, lon: -80.1117 },
+  { id: "8722968", name: "Port Laudania, Dania Cut-off Canal", short: "Port Laudania", kind: "subordinate", observed: false, lat: 26.06, lon: -80.13 },
+  { id: "8722979", name: "Hollywood Beach", short: "Hollywood Beach", kind: "subordinate", observed: false, lat: 26.04, lon: -80.115 },
+];
+export const DEFAULT_TIDE_STATION = "8722951";
+const OBSERVED_STATION = "8722956";
+
+/** Cosine interpolation between successive highs and lows (standard for subordinate stations), 6-minute steps. */
+function curveFromHilo(hilo: { t: string; v: number }[], stepMin = 6) {
+  const out: { t: string; v: number }[] = [];
+  for (let i = 0; i < hilo.length - 1; i++) {
+    const a = hilo[i], b = hilo[i + 1];
+    const ta = Date.parse(a.t), tb = Date.parse(b.t);
+    for (let t = ta; t < tb; t += stepMin * 60e3) {
+      const f = (t - ta) / (tb - ta);
+      const v = a.v + (b.v - a.v) * (1 - Math.cos(Math.PI * f)) / 2;
+      out.push({ t: new Date(t).toISOString().slice(0, 16) + ":00Z", v: +v.toFixed(3) });
+    }
   }
-  if (obs.status === "fulfilled") {
-    const j = JSON.parse(obs.value);
-    const data = (j.data ?? []).filter((x: any) => x.v !== "");
-    out.observed = data.map((x: any) => ({ t: toIso(x.t), v: Number(x.v) }));
-  } else out.errors.push("observed");
+  if (hilo.length) out.push({ t: hilo[hilo.length - 1].t, v: hilo[hilo.length - 1].v });
   return out;
 }
 
+export async function tides(stationId: string = DEFAULT_TIDE_STATION) {
+  const stn = TIDE_STATIONS.find((s) => s.id === stationId) ?? TIDE_STATIONS[0];
+  const now = new Date();
+  const begin = new Date(now.getTime() - 30 * 3600e3);
+  const end = new Date(now.getTime() + 48 * 3600e3);
+  const base = (id: string) => `station=${id}&datum=MLLW&units=english&time_zone=gmt&format=json&application=PortEvergladesUKC`;
+  const window = `begin_date=${ymd(begin)}&end_date=${ymd(end)}`;
+  const toIso = (t: string) => t.replace(" ", "T") + ":00Z";
+  const out: any = { station: stn.id, name: stn.name, kind: stn.kind, datum: "MLLW", units: "ft", stations: TIDE_STATIONS, observedStation: OBSERVED_STATION, errors: [] as string[] };
 
-export async function handleApi(pathname: string): Promise<{ status: number; body: unknown }> {
+  const [hilo, pred, obs, obsPred] = await Promise.allSettled([
+    getText(`${COOPS}?${base(stn.id)}&product=predictions&interval=hilo&${window}`),
+    stn.kind === "reference" ? getText(`${COOPS}?${base(stn.id)}&product=predictions&interval=6&${window}`) : Promise.reject(new Error("subordinate")),
+    getText(`${COOPS}?${base(OBSERVED_STATION)}&product=water_level&range=6`),
+    getText(`${COOPS}?${base(OBSERVED_STATION)}&product=predictions&interval=6&${window}`),
+  ]);
+  if (hilo.status === "fulfilled") {
+    const j = JSON.parse(hilo.value);
+    out.hilo = (j.predictions ?? []).map((x: any) => ({ t: toIso(x.t), v: Number(x.v), type: x.type }));
+  } else out.errors.push("hilo");
+  if (pred.status === "fulfilled") {
+    const j = JSON.parse(pred.value);
+    out.predictions = (j.predictions ?? []).map((x: any) => ({ t: toIso(x.t), v: Number(x.v) }));
+    out.curve = "noaa-6min";
+  } else if (out.hilo?.length) {
+    out.predictions = curveFromHilo(out.hilo);
+    out.curve = "interpolated-from-hilo";
+  } else out.errors.push("predictions");
+  // Observed water level and the matching prediction at the live gauge → residual (weather setup) applicable port-wide.
+  if (obs.status === "fulfilled") {
+    const j = JSON.parse(obs.value);
+    out.observed = (j.data ?? []).filter((x: any) => x.v !== "").map((x: any) => ({ t: toIso(x.t), v: Number(x.v) }));
+  } else out.errors.push("observed");
+  if (obsPred.status === "fulfilled") {
+    const j = JSON.parse(obsPred.value);
+    out.observedPredictions = (j.predictions ?? []).map((x: any) => ({ t: toIso(x.t), v: Number(x.v) }));
+  }
+  return out;
+}
+
+export async function handleApi(pathname: string, query: URLSearchParams = new URLSearchParams()): Promise<{ status: number; body: unknown }> {
   const route = pathname.replace(/^.*\/api\//, "").replace(/\/$/, "");
   try {
     if (route === "health") return { status: 200, body: { ok: true, time: new Date().toISOString() } };
     if (route === "buoy") return { status: 200, body: await cached("buoy", 5 * 60e3, buoy41122) };
     if (route === "wind") return { status: 200, body: await cached("wind", 5 * 60e3, pegf1) };
-    if (route === "tides") return { status: 200, body: await cached("tides", 10 * 60e3, tides) };
+    if (route === "tides") {
+      const id = (query.get("station") ?? DEFAULT_TIDE_STATION).replace(/\D/g, "").slice(0, 7);
+      if (!TIDE_STATIONS.some((s) => s.id === id)) return { status: 400, body: { error: "unknown station", stations: TIDE_STATIONS } };
+      return { status: 200, body: await cached(`tides:${id}`, 10 * 60e3, () => tides(id)) };
+    }
     return { status: 404, body: { error: `unknown route ${route}` } };
   } catch (e: any) {
     return { status: 422, body: { error: String(e?.message ?? e) } };

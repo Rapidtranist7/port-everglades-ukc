@@ -22,9 +22,9 @@ export function ChartsTab(p: { vessel: VesselForm; segs: SegmentForm[]; st: Sett
   const merged = useMemo(() => {
     const m = new Map<number, any>();
     tideSeries.forEach((r) => m.set(r.t, { ...r }));
-    obs.forEach((o) => { if (o.t >= (tideSeries[0]?.t ?? 0)) m.set(o.t, { ...(m.get(o.t) ?? { t: o.t }), obs: o.obs }); });
+    if (p.tides?.station === p.tides?.observedStation) obs.forEach((o) => { if (o.t >= (tideSeries[0]?.t ?? 0)) m.set(o.t, { ...(m.get(o.t) ?? { t: o.t }), obs: o.obs }); });
     return Array.from(m.values()).sort((a, b) => a.t - b.t);
-  }, [tideSeries, obs]);
+  }, [tideSeries, obs, p.tides?.station, p.tides?.observedStation]);
 
   return (
     <div className="grid lg:grid-cols-2 gap-5">
@@ -51,8 +51,8 @@ export function ChartsTab(p: { vessel: VesselForm; segs: SegmentForm[]; st: Sett
       </Card>
 
       <Card className="p-4">
-        <h2 className="text-sm font-semibold">Tide · South Port Everglades 8722956</h2>
-        <p className="text-xs text-muted-foreground mb-3">Predicted, observed, and forecast with observed offset. Dashed = tide needed at planned speeds{p.requiredTide != null ? ` (${p.requiredTide.toFixed(1)} ft)` : ""}.</p>
+        <h2 className="text-sm font-semibold">Tide · {p.tides?.name ?? "—"} {p.tides?.station ?? ""}</h2>
+        <p className="text-xs text-muted-foreground mb-3">Predicted{p.tides?.curve === "interpolated-from-hilo" ? " (interpolated between highs/lows)" : ""}, forecast with the 8722956 gauge offset{p.tides?.station === p.tides?.observedStation ? ", and observed" : ""}. Dashed = tide needed at planned speeds{p.requiredTide != null ? ` (${p.requiredTide.toFixed(1)} ft)` : ""}.</p>
         <div className="h-72" data-testid="chart-tide">
           <ResponsiveContainer>
             <ComposedChart data={merged} margin={{ top: 5, right: 12, left: -8, bottom: 0 }}>

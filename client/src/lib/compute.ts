@@ -13,7 +13,14 @@ export interface BuoyData {
   current?: { time: string; depthM: number | null; dir: number | null; speedCms: number | null };
 }
 export interface WindData { station: string; name: string; time: string; wdir: number | null; wspd: number | null; gst: number | null; pres: number | null }
-export interface TideData { station: string; name: string; datum: string; units: string; errors: string[]; predictions: { t: string; v: number }[]; hilo: { t: string; v: number; type: string }[]; observed: { t: string; v: number }[] }
+export interface TideStationInfo { id: string; name: string; short: string; kind: "reference" | "subordinate"; observed: boolean }
+export interface TideData {
+  station: string; name: string; kind: "reference" | "subordinate"; datum: string; units: string; errors: string[];
+  curve?: "noaa-6min" | "interpolated-from-hilo";
+  predictions: { t: string; v: number }[]; hilo: { t: string; v: number; type: string }[];
+  observed: { t: string; v: number }[]; observedPredictions?: { t: string; v: number }[];
+  stations: TideStationInfo[]; observedStation: string;
+}
 
 export const M2FT = 1 / FT;
 export const fmtFt = (m: number | null | undefined, d = 1) => (m == null || !isFinite(m) ? "—" : (m * M2FT).toFixed(d));
@@ -72,12 +79,13 @@ export function interp(series: { t: string; v: number }[], t: number): number | 
   return series[lo].v + ((series[hi].v - series[lo].v) * (t - a)) / (b - a);
 }
 
-/** Observed − predicted, averaged over the last 30 min of observations. */
+/** Observed − predicted at the live gauge (8722956), averaged over the last 30 min; applied as a port-wide weather offset. */
 export function tideResidual(td?: TideData): { residual: number | null; lastObs?: { t: string; v: number } } {
-  if (!td?.observed?.length || !td.predictions?.length) return { residual: null };
+  const ref = td?.observedPredictions?.length ? td.observedPredictions : td?.station === td?.observedStation ? td?.predictions : undefined;
+  if (!td?.observed?.length || !ref?.length) return { residual: null };
   const obs = td.observed.slice(-6);
   const diffs = obs.map((o) => {
-    const p = interp(td.predictions, Date.parse(o.t));
+    const p = interp(ref, Date.parse(o.t));
     return p == null ? null : o.v - p;
   }).filter((x): x is number => x != null);
   if (!diffs.length) return { residual: null };

@@ -4,7 +4,7 @@ import { handleApi } from "../../shared/feeds";
 
 export default async (req: Request) => {
   const url = new URL(req.url);
-  const { status, body } = await handleApi(url.pathname);
+  const { status, body } = await handleApi(url.pathname, url.searchParams);
   return new Response(JSON.stringify(body), {
     status,
     headers: {

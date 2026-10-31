@@ -38,6 +38,7 @@ export default function Home() {
   const [st, setSt] = useState<SettingsForm>({ ...SETTINGS_DEFAULT });
   const [etaOffsetH, setEtaOffsetH] = useState(0);
   const [tideMode, setTideMode] = useState<"live" | "manual">("live");
+  const [tideStation, setTideStation] = useState("8722951");
   const [manualTide, setManualTide] = useState(1.0);
   const [waveSrc, setWaveSrc] = useState<"live" | "manual">("live");
   const [manualWave, setManualWave] = useState({ hsFt: 4, tp: 9, dir: 90 });
@@ -45,7 +46,7 @@ export default function Home() {
 
   const buoy = useQuery<BuoyData>({ queryKey: ["/api/buoy"], refetchInterval: 5 * 60e3 });
   const wind = useQuery<WindData>({ queryKey: ["/api/wind"], refetchInterval: 5 * 60e3 });
-  const tides = useQuery<TideData>({ queryKey: ["/api/tides"], refetchInterval: 10 * 60e3 });
+  const tides = useQuery<TideData>({ queryKey: [`/api/tides?station=${tideStation}`], refetchInterval: 10 * 60e3 });
 
   const toggleDark = () => { setDark(!dark); document.documentElement.classList.toggle("dark", !dark); };
 
@@ -249,7 +250,7 @@ export default function Home() {
             <div className="text-xs text-muted-foreground mt-0.5">from {compass(wind.data?.wdir)} ({wind.data?.wdir ?? "—"}°) · gust {wind.data?.gst != null ? (wind.data.gst * 1.94384).toFixed(0) : "—"} kn</div>
           </Card>
           <Card className="p-3.5">
-            <div className="flex items-center justify-between text-xs text-muted-foreground"><span className="flex items-center gap-1.5"><Clock className="w-3.5 h-3.5" />Tide at ETA · 8722956</span><span>{tideMode === "live" ? fmtTime(etaMs) : "manual"}</span></div>
+            <div className="flex items-center justify-between text-xs text-muted-foreground"><span className="flex items-center gap-1.5 truncate"><Clock className="w-3.5 h-3.5 shrink-0" />Tide at ETA · {tides.data?.stations?.find((x) => x.id === tideStation)?.short ?? tideStation}</span><span>{tideMode === "live" ? fmtTime(etaMs) : "manual"}</span></div>
             <div className="font-mono text-xl font-semibold mt-1" data-testid="text-tide">{tideFt >= 0 ? "+" : ""}{tideFt.toFixed(1)} <span className="text-sm text-muted-foreground font-normal">ft MLLW</span></div>
             <div className="text-xs text-muted-foreground mt-0.5">{tideMode === "live" ? `predicted ${predAtEta?.toFixed(2) ?? "—"} · offset ${residual != null ? (residual >= 0 ? "+" : "") + residual.toFixed(2) : "—"} ft` : "entered by pilot"}</div>
           </Card>
@@ -280,6 +281,18 @@ export default function Home() {
                   </div>
                   {tideMode === "live" ? (
                     <div className="space-y-2">
+                      <Select value={tideStation} onValueChange={setTideStation}>
+                        <SelectTrigger className="h-9" data-testid="select-tide-station"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {(tides.data?.stations ?? [{ id: "8722951", name: "Port Everglades, Turning Basin", short: "Turning Basin", kind: "subordinate", observed: false }]).map((x) => (
+                            <SelectItem key={x.id} value={x.id}>{x.name} · {x.id}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-[11px] text-muted-foreground">
+                        {tides.data?.curve === "interpolated-from-hilo" ? "NOAA publishes highs/lows only for this station; the curve between them is interpolated. " : tides.data?.curve === "noaa-6min" ? "NOAA 6-minute predictions. " : ""}
+                        Weather offset comes from the live gauge at South Port Everglades (8722956).
+                      </p>
                       <div className="flex justify-between text-xs"><span className="text-muted-foreground">ETA at sea buoy</span><span className="font-mono" data-testid="text-eta">{etaOffsetH === 0 ? "Now" : `+${etaOffsetH.toFixed(2).replace(/\.?0+$/, "")} h`} · {fmtDayTime(etaMs)}</span></div>
                       <Slider value={[etaOffsetH]} min={0} max={30} step={0.25} onValueChange={(x) => setEtaOffsetH(x[0])} data-testid="slider-eta" />
                       <div className="flex flex-wrap gap-1.5 pt-1">

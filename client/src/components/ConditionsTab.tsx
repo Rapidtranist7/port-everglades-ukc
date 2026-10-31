@@ -85,7 +85,7 @@ export function ConditionsTab({ buoy, wind, tides, residual }: { buoy?: BuoyData
         </Card>
         <Card className="p-4 space-y-3">
           <div>
-            <h2 className="text-sm font-semibold">Water level · South Port Everglades 8722956</h2>
+            <h2 className="text-sm font-semibold">Water level · live gauge, South Port Everglades 8722956</h2>
             <p className="text-xs"><Age iso={tides?.observed?.[tides.observed.length - 1]?.t} /></p>
           </div>
           <div className="grid grid-cols-3 gap-4">
