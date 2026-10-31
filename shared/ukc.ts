@@ -432,10 +432,10 @@ export function ukcBudget(v: Vessel, seg: SegmentInput, spec: SpecBin[], st: Set
   };
 }
 
-/** Max speed (m/s) keeping net UKC ≥ margin. Returns null if even 3 kn fails. */
+/** Max speed (m/s) keeping net UKC ≥ margin. Returns null if even 1 kn fails. */
 export function maxSpeedFor(v: Vessel, seg: SegmentInput, spec: SpecBin[], st: Settings, margin: number) {
   const f = (V: number) => ukcBudget(v, { ...seg, speed: V }, spec, st).netUkc - margin;
-  let lo = 3 * KN, hi = 16 * KN;
+  let lo = 1 * KN, hi = 16 * KN;
   if (f(lo) < 0) return null;
   if (f(hi) >= 0) return hi;
   for (let i = 0; i < 40; i++) {

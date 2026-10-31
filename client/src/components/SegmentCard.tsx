@@ -95,7 +95,7 @@ export function SegmentCard({ r, draftFt, tideFt, marginFt, onChange }: { r: Row
         <div className="text-right text-xs space-y-1">
           <div><span className="text-muted-foreground">Speed </span><span className="font-mono font-semibold">{sf.speedKn.toFixed(1)} kn</span></div>
           <div><span className="text-muted-foreground">Shallowest </span><span className="font-mono">{sf.chartDepthFt.toFixed(1)} + {tideFt.toFixed(1)} ft</span></div>
-          <div><span className="text-muted-foreground">h/T </span><span className={`font-mono ${b.hT < 1.1 ? "text-[hsl(var(--nogo))]" : b.hT < 1.3 ? "text-[hsl(var(--caution))]" : ""}`}>{b.hT.toFixed(2)}</span></div>
+          <div><span className="text-muted-foreground">h/T </span><span className={`font-mono ${b.hT < 1.1 ? "text-[hsl(var(--nogo))]" : b.hT < 1.3 && sf.type !== "canal" ? "text-[hsl(var(--caution))]" : ""}`}>{b.hT.toFixed(2)}</span></div>
         </div>
       </div>
 
@@ -108,7 +108,7 @@ export function SegmentCard({ r, draftFt, tideFt, marginFt, onChange }: { r: Row
         <div><dt className="text-xs text-muted-foreground">Depth Froude no.</dt><dd className="font-mono">{b.squat.Fnh.toFixed(2)}</dd></div>
         <div>
           <dt className="text-xs text-muted-foreground">Max speed for margin</dt>
-          <dd className="font-mono font-semibold" data-testid={`maxspeed-${sf.id}`}>{r.maxSpeedKn == null ? "None ≥ 3 kn" : r.maxSpeedKn >= 15.9 ? "> 16 kn" : `${r.maxSpeedKn.toFixed(1)} kn`}</dd>
+          <dd className="font-mono font-semibold" data-testid={`maxspeed-${sf.id}`}>{r.maxSpeedKn == null ? "None ≥ 1 kn" : r.maxSpeedKn >= 15.9 ? "> 16 kn" : `${r.maxSpeedKn.toFixed(1)} kn`}</dd>
         </div>
         <div>
           <dt className="text-xs text-muted-foreground">Tide needed at {sf.speedKn} kn</dt>
@@ -126,7 +126,7 @@ export function SegmentCard({ r, draftFt, tideFt, marginFt, onChange }: { r: Row
 
       <div className="space-y-2">
         <label className="text-xs text-muted-foreground flex justify-between"><span>Planned speed</span><span className="font-mono">{sf.speedKn.toFixed(1)} kn</span></label>
-        <Slider value={[sf.speedKn]} min={4} max={14} step={0.5} onValueChange={(x) => set({ speedKn: x[0] })} data-testid={`slider-speed-${sf.id}`} />
+        <Slider value={[sf.speedKn]} min={1} max={14} step={0.5} onValueChange={(x) => set({ speedKn: x[0] })} data-testid={`slider-speed-${sf.id}`} />
       </div>
 
       <div className="flex gap-2">

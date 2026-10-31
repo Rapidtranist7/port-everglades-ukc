@@ -142,7 +142,8 @@ export function evaluate(vf: VesselForm, segs: SegmentForm[], st: SettingsForm, 
     const status: Status = b.netUkc < 0 ? "nogo" : b.netUkc < margin || !staticOk ? "caution" : "go";
     const warnings: string[] = [];
     if (b.hT < 1.1) warnings.push(`Depth/draft ${b.hT.toFixed(2)} at the shallowest spot is below 1.10 — below the PIANC minimum for still water${b.hTsquat < 1.1 ? " and outside most squat formula ranges" : ""}.`);
-    else if (b.hT < 1.3 && b.motionDetail && b.motionDetail.hsInput > 0.3) warnings.push(`Depth/draft ${b.hT.toFixed(2)}: PIANC guidance suggests ≥ 1.3 with waves up to 1 m Hs, ≥ 1.5 above that.`);
+    // PIANC's 1.3 / 1.5 depth-to-draft guidance is for wave-exposed water; inside the jetties (canal type) wind waves are limited, so only the 1.10 still-water floor applies there.
+    else if (sf.type !== "canal" && b.hT < 1.3 && b.motionDetail && b.motionDetail.hsInput > 0.3) warnings.push(`Depth/draft ${b.hT.toFixed(2)}: PIANC guidance suggests ≥ 1.3 with waves up to 1 m Hs, ≥ 1.5 above that (wave-exposed water).`);
     if (b.squat.Fnh > 0.6) warnings.push(`Depth Froude number ${b.squat.Fnh.toFixed(2)} > 0.6 — squat rises steeply; formulas lose reliability.`);
     if (b.squatAtShoal - b.squat.controlling > 0.15 && sf.lengthFt * FT >= v.lpp) warnings.push(`Shallow area is at least a ship length long — squat may develop at the shallowest depth (${fmtFt(b.squatAtShoal)} ft rather than ${fmtFt(b.squat.controlling)} ft).`);
     if (!staticOk) warnings.push(`Static UKC ${fmtFt(b.staticUkc)} ft is below the ${sf.staticRulePct}% of draft rule (${fmtFt(staticMin)} ft).`);
@@ -155,7 +156,7 @@ export function speedCurve(vf: VesselForm, segs: SegmentForm[], st: SettingsForm
   const v = toVessel(vf);
   const s = toSettings(st);
   const rows: Record<string, number>[] = [];
-  for (let kn = 4; kn <= 14.001; kn += 0.5) {
+  for (let kn = 1; kn <= 14.001; kn += 0.5) {
     const row: Record<string, number> = { kn };
     segs.forEach((sf) => {
       const seg = { ...toSegment(sf, tideFt, st), speed: kn * KN };
