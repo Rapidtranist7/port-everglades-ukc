@@ -34,7 +34,8 @@ export interface SegmentForm {
   id: string;
   name: string;
   short: string;
-  chartDepthFt: number; // MLLW
+  chartDepthFt: number; // MLLW, shallowest depth in the segment — clearance
+  avgDepthFt: number; // MLLW, average depth over the area — squat
   type: ChannelType;
   widthFt?: number;
   overbankFt?: number; // MLLW depth outside the dredged cut (trench channels)
@@ -50,21 +51,23 @@ export const SEGMENT_DEFAULTS: SegmentForm[] = [
   {
     id: "shoal",
     name: "Sea buoy shoal",
-    short: "Sea buoy shoal",
+    short: "Sea buoy",
     chartDepthFt: 45.7,
+    avgDepthFt: 48,
     type: "open",
     speedKn: 12,
     headingDeg: 270,
     exposure: 1,
     lengthFt: 3000,
     staticRulePct: 10,
-    description: "45.7 ft spot just north of the sea buoy on the channel line. Open water, full swell exposure.",
+    description: "45.7 ft spot just north of the sea buoy on the channel line; surrounding water assumed ~48 ft. Open water, full swell exposure.",
   },
   {
     id: "oec",
     name: "Buoys 2 & 3 — outer entrance channel",
     short: "Buoys 2 & 3",
     chartDepthFt: 45,
+    avgDepthFt: 46,
     type: "trench",
     widthFt: 500,
     overbankFt: 10,
@@ -73,13 +76,14 @@ export const SEGMENT_DEFAULTS: SegmentForm[] = [
     exposure: 1,
     lengthFt: 5100,
     staticRulePct: 10,
-    description: "Outer entrance channel, 500 ft, −45 ft MLLW. USACE treated it as a trench with ~10 ft outside the cut.",
+    description: "Outer entrance channel, 500 ft wide, −45 ft MLLW project depth (average assumed 46 ft with overdepth). USACE treated it as a trench with ~10 ft outside the cut.",
   },
   {
     id: "jetties",
-    name: "Jetties — inner entrance channel",
-    short: "Jetties",
+    name: "Inside jetties & ICW",
+    short: "Jetties / ICW",
     chartDepthFt: 45,
+    avgDepthFt: 46,
     type: "canal",
     widthFt: 450,
     speedKn: 8,
@@ -87,7 +91,7 @@ export const SEGMENT_DEFAULTS: SegmentForm[] = [
     exposure: 0.5,
     lengthFt: 2300,
     staticRulePct: 10,
-    description: "Inner entrance channel, 450 ft. Authorized −42 ft; port notice gives 45.0 ft max entrance depth — enter latest survey. Half wave exposure (assumption).",
+    description: "Inner entrance channel between the jetties to the ICW crossing, 450 ft wide. Authorized −42 ft; port notice gives 45.0 ft — enter the latest survey. Half wave exposure (assumption).",
   },
 ];
 

@@ -76,7 +76,7 @@ export function ChartsTab(p: { vessel: VesselForm; segs: SegmentForm[]; st: Sett
         <div className="overflow-x-auto">
           <table className="w-full text-sm min-w-[640px]" data-testid="table-budget">
             <thead className="text-xs text-muted-foreground"><tr className="border-b border-border">
-              {["Point", "Depth + tide", "Draft", "Static UKC", "Squat", "Wave/roll", "Net UKC", "Max speed", "Tide needed"].map((h) => <th key={h} className="text-left font-medium py-2 pr-3">{h}</th>)}
+              {["Point", "Shallowest + tide", "Draft", "Static UKC", "Squat", "Wave/roll", "Net UKC", "Max speed", "Tide needed"].map((h) => <th key={h} className="text-left font-medium py-2 pr-3">{h}</th>)}
             </tr></thead>
             <tbody className="font-mono">
               {p.rows.map((r) => {

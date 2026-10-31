@@ -26,10 +26,11 @@ export function toSegment(s: SegmentForm, tideFt: number, st: SettingsForm): Seg
   const heading = st.direction === "inbound" ? s.headingDeg : (s.headingDeg + 180) % 360;
   return {
     chartDepth: s.chartDepthFt * FT,
+    squatDepth: Math.max(s.chartDepthFt, s.avgDepthFt ?? s.chartDepthFt) * FT,
     tide: tideFt * FT,
     type: s.type,
     width: s.widthFt ? s.widthFt * FT : undefined,
-    trenchHeight: s.type === "trench" ? Math.max(0, s.chartDepthFt - (s.overbankFt ?? 10)) * FT : undefined,
+    trenchHeight: s.type === "trench" ? Math.max(0, Math.max(s.chartDepthFt, s.avgDepthFt ?? s.chartDepthFt) - (s.overbankFt ?? 10)) * FT : undefined,
     speed: s.speedKn * KN,
     heading,
     exposure: s.exposure,
@@ -98,9 +99,10 @@ export function evaluate(vf: VesselForm, segs: SegmentForm[], st: SettingsForm, 
     const staticOk = b.staticUkc >= staticMin;
     const status: Status = b.netUkc < 0 ? "nogo" : b.netUkc < margin || !staticOk ? "caution" : "go";
     const warnings: string[] = [];
-    if (b.hT < 1.1) warnings.push(`Depth/draft ${b.hT.toFixed(2)} is below 1.10 — outside most squat formula ranges and below the PIANC minimum for still water.`);
+    if (b.hT < 1.1) warnings.push(`Depth/draft ${b.hT.toFixed(2)} at the shallowest spot is below 1.10 — below the PIANC minimum for still water${b.hTsquat < 1.1 ? " and outside most squat formula ranges" : ""}.`);
     else if (b.hT < 1.3 && b.motionDetail && b.motionDetail.hsInput > 0.3) warnings.push(`Depth/draft ${b.hT.toFixed(2)}: PIANC guidance suggests ≥ 1.3 with waves up to 1 m Hs, ≥ 1.5 above that.`);
     if (b.squat.Fnh > 0.6) warnings.push(`Depth Froude number ${b.squat.Fnh.toFixed(2)} > 0.6 — squat rises steeply; formulas lose reliability.`);
+    if (b.squatAtShoal - b.squat.controlling > 0.15 && sf.lengthFt * FT >= v.lpp) warnings.push(`Shallow area is at least a ship length long — squat may develop at the shallowest depth (${fmtFt(b.squatAtShoal)} ft rather than ${fmtFt(b.squat.controlling)} ft).`);
     if (!staticOk) warnings.push(`Static UKC ${fmtFt(b.staticUkc)} ft is below the ${sf.staticRulePct}% of draft rule (${fmtFt(staticMin)} ft).`);
     const outOfRange = b.squat.results.filter((r) => r.applicable && !r.inRange).map((r) => r.id);
     return { sf, seg, budget: b, maxSpeedKn: maxV == null ? null : maxV / KN, minTideFt: minTide == null ? null : minTide * M2FT, staticMinFt: staticMin * M2FT, staticOk, status, warnings, outOfRange };

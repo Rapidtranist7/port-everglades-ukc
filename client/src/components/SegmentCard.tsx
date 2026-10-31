@@ -94,7 +94,7 @@ export function SegmentCard({ r, draftFt, tideFt, marginFt, onChange }: { r: Row
         </div>
         <div className="text-right text-xs space-y-1">
           <div><span className="text-muted-foreground">Speed </span><span className="font-mono font-semibold">{sf.speedKn.toFixed(1)} kn</span></div>
-          <div><span className="text-muted-foreground">Depth </span><span className="font-mono">{sf.chartDepthFt.toFixed(1)} + {tideFt.toFixed(1)} ft</span></div>
+          <div><span className="text-muted-foreground">Shallowest </span><span className="font-mono">{sf.chartDepthFt.toFixed(1)} + {tideFt.toFixed(1)} ft</span></div>
           <div><span className="text-muted-foreground">h/T </span><span className={`font-mono ${b.hT < 1.1 ? "text-[hsl(var(--nogo))]" : b.hT < 1.3 ? "text-[hsl(var(--caution))]" : ""}`}>{b.hT.toFixed(2)}</span></div>
         </div>
       </div>
@@ -103,7 +103,7 @@ export function SegmentCard({ r, draftFt, tideFt, marginFt, onChange }: { r: Row
 
       <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
         <div><dt className="text-xs text-muted-foreground">Static UKC</dt><dd className="font-mono">{fmtFt(b.staticUkc)} ft <span className={`text-xs ${r.staticOk ? "text-muted-foreground" : "text-[hsl(var(--caution))]"}`}>(≥{r.staticMinFt.toFixed(1)})</span></dd></div>
-        <div><dt className="text-xs text-muted-foreground">Squat ({b.controllingPoint === "bilge" ? "bilge" : b.controllingPoint})</dt><dd className="font-mono">{fmtFt(b.squat.controlling)} ft</dd></div>
+        <div><dt className="text-xs text-muted-foreground">Squat (avg depth {sf.avgDepthFt.toFixed(1)} ft)</dt><dd className="font-mono">{fmtFt(b.squat.controlling)} ft{b.squatAtShoal - b.squat.controlling > 0.03 && <span className="text-xs text-muted-foreground"> · {fmtFt(b.squatAtShoal)} at shoal</span>}</dd></div>
         <div><dt className="text-xs text-muted-foreground">Wave + roll motion</dt><dd className="font-mono">{fmtFt(b.motion)} ft</dd></div>
         <div><dt className="text-xs text-muted-foreground">Depth Froude no.</dt><dd className="font-mono">{b.squat.Fnh.toFixed(2)}</dd></div>
         <div>
@@ -161,7 +161,8 @@ export function SegmentCard({ r, draftFt, tideFt, marginFt, onChange }: { r: Row
 
       {edit && (
         <div className="grid grid-cols-2 gap-3 rounded-md ring-1 ring-border p-3" data-testid={`form-segment-${sf.id}`}>
-                    <Field label="Chart depth (ft MLLW)" v={sf.chartDepthFt} step={0.1} onChange={(x) => set({ chartDepthFt: x })} id={`depth-${sf.id}`} />
+                    <Field label="Shallowest depth (ft MLLW) → clearance" v={sf.chartDepthFt} step={0.1} onChange={(x) => set({ chartDepthFt: x })} id={`depth-${sf.id}`} />
+          <Field label="Average depth (ft MLLW) → squat" v={sf.avgDepthFt} step={0.1} onChange={(x) => set({ avgDepthFt: x })} id={`avgdepth-${sf.id}`} />
           <div className="space-y-1">
             <Label className="text-xs">Channel type</Label>
             <Select value={sf.type} onValueChange={(t) => set({ type: t as SegmentForm["type"], widthFt: t === "open" ? undefined : sf.widthFt ?? 500, overbankFt: sf.overbankFt ?? 10 })}>

@@ -15,6 +15,7 @@ export function MethodTab() {
         <F>{`Net UKC = (chart depth + tide) − draft − squat − wave/roll motion − allowance`}</F>
         <ul className="list-disc pl-5 space-y-1.5 text-muted-foreground">
           <li><b className="text-foreground">Tide</b>: NOAA prediction at ETA for South Port Everglades 8722956, plus the observed − predicted offset from the last 30 min (optional).</li>
+          <li><b className="text-foreground">Two depths per segment</b>: the shallowest depth sets the clearance; the average depth over the area drives squat, because the pressure field that causes squat spans roughly a ship length and a single short shoal does not fully develop it. If the shallow area is a ship length or longer, the card warns and shows squat at the shoal depth too.</li>
           <li><b className="text-foreground">Squat</b>: seven published formulas run together; by default the highest is used. USACE's Port Everglades study used the average of Eryuzlu, Huuska and Römisch (selectable).</li>
           <li><b className="text-foreground">Wave motion</b>: the buoy's measured directional spectrum is passed through closed-form heave and pitch response functions for the ship (Jensen, Mansour &amp; Olsen 2004). Bow/stern motion = heave combined with pitch × L/2. Expected maximum over the transit = σ·√(2 ln N).</li>
           <li><b className="text-foreground">Roll/heel</b>: bilge drop = B/2 · sin(roll + heel), added to heave. The larger of the bow/stern case and the bilge case controls; maxima are not blindly summed (Gourlay 2007).</li>

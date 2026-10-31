@@ -360,7 +360,8 @@ export function jonswapBins(hs: number, tp: number, dirFrom: number, gamma = 3.3
 // ---------------- UKC budget ----------------
 
 export interface SegmentInput {
-  chartDepth: number; // m (MLLW)
+  chartDepth: number; // m (MLLW), shallowest controlling depth — used for clearance
+  squatDepth?: number; // m (MLLW), average depth over the area — used for squat (defaults to chartDepth)
   tide: number; // m above MLLW
   type: ChannelType;
   width?: number;
@@ -382,9 +383,11 @@ export interface Settings {
 }
 
 export function ukcBudget(v: Vessel, seg: SegmentInput, spec: SpecBin[], st: Settings) {
-  const depth = seg.chartDepth + seg.tide;
-  const w: Waterway = { depth, type: seg.type, width: seg.width, trenchHeight: seg.trenchHeight };
+  const depth = seg.chartDepth + seg.tide; // controlling (shallowest) depth
+  const squatDepth = Math.max(depth, (seg.squatDepth ?? seg.chartDepth) + seg.tide); // average depth drives squat
+  const w: Waterway = { depth: squatDepth, type: seg.type, width: seg.width, trenchHeight: seg.trenchHeight };
   const sq = squatEnsemble(v, w, seg.speed, st.squatPolicy);
+  const sqShoal = squatDepth > depth + 1e-6 ? squatEnsemble(v, { ...w, depth }, seg.speed, st.squatPolicy) : sq;
   const transit = seg.lengthM / Math.max(0.5, seg.speed) + v.lpp / Math.max(0.5, seg.speed);
   const mo = spec.length ? waveMotion(v, seg.speed, seg.heading, spec, transit) : null;
   const buoyEnd = mo ? (st.motionStat === "max" ? mo.endMax : mo.endSig) : 0;
@@ -410,8 +413,10 @@ export function ukcBudget(v: Vessel, seg: SegmentInput, spec: SpecBin[], st: Set
   const netUkc = staticUkc - sq.controlling - motion - seg.extraAllowance;
   return {
     depth,
+    squatDepth,
     staticUkc,
     squat: sq,
+    squatAtShoal: sqShoal.controlling,
     motion,
     endWave,
     midWave,
@@ -422,6 +427,7 @@ export function ukcBudget(v: Vessel, seg: SegmentInput, spec: SpecBin[], st: Set
     controllingPoint,
     netUkc,
     hT: depth / v.draft,
+    hTsquat: squatDepth / v.draft,
     transit,
   };
 }

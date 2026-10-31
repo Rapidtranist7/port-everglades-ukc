@@ -156,9 +156,49 @@ export default function Home() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 py-5 space-y-5">
-        {/* Decision banner */}
-        <section className={`rounded-lg border p-4 md:p-5 ${STATUS_META[overall].cls}`} data-testid="banner-decision">
-          <div className="flex flex-col md:flex-row md:items-center gap-3 md:gap-6">
+        {/* Vessel — top */}
+        <Card className="p-4" data-testid="card-vessel">
+          <div className="grid lg:grid-cols-[1.4fr_2fr_auto] gap-4 items-start">
+            <div className="space-y-2">
+              <h2 className="text-sm font-semibold flex items-center gap-2"><Ship className="w-4 h-4 text-[hsl(var(--chart-1))]" />Vessel</h2>
+              <Select value={vessel.preset} onValueChange={applyPreset}>
+                <SelectTrigger data-testid="select-vessel"><SelectValue /></SelectTrigger>
+                <SelectContent>{VESSEL_PRESETS.map((p) => <SelectItem key={p.preset} value={p.preset}>{p.name}</SelectItem>)}</SelectContent>
+              </Select>
+              <p className="text-[11px] text-muted-foreground">{VESSEL_PRESETS.find((p) => p.preset === vessel.preset)?.note}. Verify against ship's particulars.</p>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <Field label="Deepest draft" suffix="ft" v={vessel.draftFt} step={0.1} onChange={(x) => setVessel({ ...vessel, draftFt: x })} id="draft" />
+              <Field label="Block coeff. Cb" v={vessel.cb} step={0.01} onChange={(x) => setVessel({ ...vessel, cb: x })} id="cb" />
+              <Field label="Length BP" suffix="ft" v={vessel.lbpFt} step={1} onChange={(x) => setVessel({ ...vessel, lbpFt: x })} id="lbp" />
+              <Field label="Beam" suffix="ft" v={vessel.beamFt} step={0.1} onChange={(x) => setVessel({ ...vessel, beamFt: x })} id="beam" />
+            </div>
+            <div className="space-y-2 min-w-[11rem]">
+              <Label className="text-xs">Direction</Label>
+              <Select value={st.direction} onValueChange={(x) => setSt({ ...st, direction: x as SettingsForm["direction"] })}>
+                <SelectTrigger className="h-9" data-testid="select-direction"><SelectValue /></SelectTrigger>
+                <SelectContent><SelectItem value="inbound">Inbound (270°)</SelectItem><SelectItem value="outbound">Outbound (090°)</SelectItem></SelectContent>
+              </Select>
+              <details className="group text-xs">
+                <summary className="cursor-pointer text-muted-foreground hover:text-foreground flex items-center gap-1.5"><Calculator className="w-3.5 h-3.5" />Cb from displacement</summary>
+                <div className="mt-2 space-y-2">
+                  <Field label="Displacement at this draft" suffix="t" v={cbCalc.dispT} step={500} onChange={(x) => setCbCalc({ dispT: x })} id="disp" />
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-muted-foreground font-mono">Cb = <span className="text-foreground font-semibold">{isFinite(cbFromDisp) ? cbFromDisp.toFixed(3) : "—"}</span></span>
+                    <Button size="sm" variant="outline" disabled={!isFinite(cbFromDisp) || cbFromDisp > 1 || cbFromDisp < 0.4} onClick={() => setVessel({ ...vessel, cb: +cbFromDisp.toFixed(3) })} data-testid="button-apply-cb">Use</Button>
+                  </div>
+                  <table className="w-full text-[11px] text-muted-foreground">
+                    <tbody>{CB_RANGES.map((c) => <tr key={c.type}><td className="py-0.5">{c.type}</td><td className="text-right font-mono">{c.range}</td></tr>)}</tbody>
+                  </table>
+                </div>
+              </details>
+            </div>
+          </div>
+        </Card>
+
+        {/* Segment summary */}
+        <section className={`rounded-lg border ${STATUS_META[overall].cls}`} data-testid="summary-segments">
+          <div className="px-4 pt-4 pb-3 flex flex-col md:flex-row md:items-center gap-2 md:gap-4" data-testid="banner-decision">
             <div className="flex items-center gap-3 min-w-0">
               <span className={`w-3 h-3 rounded-full shrink-0 ${STATUS_META[overall].dot}`} />
               <div className="min-w-0">
@@ -166,19 +206,34 @@ export default function Home() {
                 <p className="text-sm text-muted-foreground">{banner.body}</p>
               </div>
             </div>
-            <div className="md:ml-auto grid grid-cols-3 gap-4 text-xs shrink-0">
-              {limitingSpeed.map((l) => (
-                <div key={l.name}><div className="text-muted-foreground">{l.name} max</div><div className="font-mono text-sm font-semibold">{l.kn == null ? "none" : l.kn >= 15.9 ? ">16 kn" : `${l.kn.toFixed(1)} kn`}</div></div>
-              ))}
-            </div>
+            {tideMode === "live" && requiredTide != null && (
+              <div className="md:ml-auto text-xs text-muted-foreground flex flex-wrap gap-x-3 gap-y-1 md:justify-end" data-testid="text-windows">
+                <span className="font-medium text-foreground">Tide windows, next 30 h:</span>
+                {windows.length === 0 ? <span>none — needs {requiredTide.toFixed(1)} ft</span> :
+                  windows.slice(0, 3).map((w) => <span key={w.start} className="font-mono">{fmtDayTime(w.start)}–{fmtTime(w.end)}</span>)}
+              </div>
+            )}
           </div>
-          {tideMode === "live" && requiredTide != null && (
-            <div className="mt-3 pt-3 border-t border-border/60 text-xs text-muted-foreground flex flex-wrap gap-x-4 gap-y-1" data-testid="text-windows">
-              <span className="font-medium text-foreground">Tide windows (next 30 h, current waves held):</span>
-              {windows.length === 0 ? <span>none — required {requiredTide.toFixed(1)} ft not reached</span> :
-                windows.slice(0, 4).map((w) => <span key={w.start} className="font-mono">{fmtDayTime(w.start)}–{fmtTime(w.end)}</span>)}
-            </div>
-          )}
+          <div className="grid md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-border/60 border-t border-border/60">
+            {rows.map((r) => {
+              const m = STATUS_META[r.status];
+              const net = r.budget.netUkc * M2FT;
+              const typeLabel = r.sf.type === "open" ? "Open water" : r.sf.type === "trench" ? "Dredged trench" : "Confined channel";
+              return (
+                <div key={r.sf.id} className="px-4 py-3 flex items-center gap-4" data-testid={`summary-${r.sf.id}`}>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[11px] uppercase tracking-wider text-muted-foreground">{typeLabel}</div>
+                    <div className="text-sm font-semibold truncate">{r.sf.short}</div>
+                    <div className="text-xs text-muted-foreground mt-0.5">{r.sf.speedKn.toFixed(0)} kn · max <span className="font-mono">{r.maxSpeedKn == null ? "none" : r.maxSpeedKn >= 15.9 ? ">16" : r.maxSpeedKn.toFixed(1)}</span> kn · tide ≥ <span className="font-mono">{r.minTideFt == null ? ">6" : r.minTideFt <= -2.9 ? "any" : r.minTideFt.toFixed(1)}</span> ft</div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <div className={`font-mono text-3xl leading-none font-semibold tabular-nums ${m.text}`}>{net < 0 ? "−" : ""}{Math.abs(net).toFixed(1)}<span className="text-sm text-muted-foreground font-normal ml-1">ft</span></div>
+                    <div className={`text-[11px] mt-1 inline-flex items-center gap-1 ${m.text}`}><span className={`w-1.5 h-1.5 rounded-full ${m.dot}`} />{m.label}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </section>
 
         {/* Live conditions strip */}
@@ -217,42 +272,7 @@ export default function Home() {
           <TabsContent value="transit" className="mt-4">
             <div className="flex flex-col gap-5">
               {/* Inputs */}
-              <div className="grid md:grid-cols-3 gap-4 items-start order-2 lg:order-1">
-                <Card className="p-4 space-y-3">
-                  <h2 className="text-sm font-semibold flex items-center gap-2"><Ship className="w-4 h-4 text-[hsl(var(--chart-1))]" />Vessel</h2>
-                  <Select value={vessel.preset} onValueChange={applyPreset}>
-                    <SelectTrigger data-testid="select-vessel"><SelectValue /></SelectTrigger>
-                    <SelectContent>{VESSEL_PRESETS.map((p) => <SelectItem key={p.preset} value={p.preset}>{p.name}</SelectItem>)}</SelectContent>
-                  </Select>
-                  <p className="text-[11px] text-muted-foreground">{VESSEL_PRESETS.find((p) => p.preset === vessel.preset)?.note} Verify against ship's particulars.</p>
-                  <div className="grid grid-cols-2 gap-3">
-                    <Field label="Deepest draft" suffix="ft" v={vessel.draftFt} step={0.1} onChange={(x) => setVessel({ ...vessel, draftFt: x })} id="draft" />
-                    <Field label="Block coeff. Cb" v={vessel.cb} step={0.01} onChange={(x) => setVessel({ ...vessel, cb: x })} id="cb" />
-                    <Field label="Length BP" suffix="ft" v={vessel.lbpFt} step={1} onChange={(x) => setVessel({ ...vessel, lbpFt: x })} id="lbp" />
-                    <Field label="Beam" suffix="ft" v={vessel.beamFt} step={0.1} onChange={(x) => setVessel({ ...vessel, beamFt: x })} id="beam" />
-                  </div>
-                  <details className="group text-xs">
-                    <summary className="cursor-pointer text-muted-foreground hover:text-foreground flex items-center gap-1.5"><Calculator className="w-3.5 h-3.5" />Cb from displacement</summary>
-                    <div className="mt-2 space-y-2">
-                      <Field label="Displacement at this draft" suffix="t" v={cbCalc.dispT} step={500} onChange={(x) => setCbCalc({ dispT: x })} id="disp" />
-                      <div className="flex items-center justify-between">
-                        <span className="text-muted-foreground font-mono">Δ / (1.025·L·B·T) = <span className="text-foreground font-semibold">{isFinite(cbFromDisp) ? cbFromDisp.toFixed(3) : "—"}</span></span>
-                        <Button size="sm" variant="outline" disabled={!isFinite(cbFromDisp) || cbFromDisp > 1 || cbFromDisp < 0.4} onClick={() => setVessel({ ...vessel, cb: +cbFromDisp.toFixed(3) })} data-testid="button-apply-cb">Use</Button>
-                      </div>
-                      <table className="w-full text-[11px] text-muted-foreground">
-                        <tbody>{CB_RANGES.map((c) => <tr key={c.type}><td className="py-0.5">{c.type}</td><td className="text-right font-mono">{c.range}</td></tr>)}</tbody>
-                      </table>
-                    </div>
-                  </details>
-                  <div className="flex items-center justify-between pt-1">
-                    <Label className="text-xs">Direction</Label>
-                    <Select value={st.direction} onValueChange={(x) => setSt({ ...st, direction: x as SettingsForm["direction"] })}>
-                      <SelectTrigger className="w-36 h-8" data-testid="select-direction"><SelectValue /></SelectTrigger>
-                      <SelectContent><SelectItem value="inbound">Inbound (270°)</SelectItem><SelectItem value="outbound">Outbound (090°)</SelectItem></SelectContent>
-                    </Select>
-                  </div>
-                </Card>
-
+              <div className="grid md:grid-cols-2 gap-4 items-start order-2 lg:order-1">
                 <Card className="p-4 space-y-3">
                   <div className="flex items-center justify-between">
                     <h2 className="text-sm font-semibold flex items-center gap-2"><Clock className="w-4 h-4 text-[hsl(var(--chart-1))]" />Tide</h2>
